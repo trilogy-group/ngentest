@@ -18,7 +18,8 @@ module.exports = async function parseTypescript(fileOrTs, className){
   if (className) {
     klass = parsed.declarations.find(decl => decl.name === className);
   } else {
-    klass = parsed.declarations[0];
+    const classDeclarations = parsed.declarations.filter(value => value.properties);
+    klass = classDeclarations[0];
   }
   ret.name = klass.name;
 
@@ -48,12 +49,12 @@ module.exports = async function parseTypescript(fileOrTs, className){
     });
     ret.constructor.body = fileContents
       .substring(constructor.start, constructor.end)
-      .match(/{([\s\S]+)\}$/m)[1];
+      .match(/{([\s\S]*)\}$/m)[1];
   }
 
   // properties 
   klass.properties.forEach(prop => {
-    console.log('prop........', prop);
+    //console.log('prop........', prop);
     ret.properties[prop.name] = {
       type: prop.type,
       body: fileContents.substring(prop.start, prop.end)
