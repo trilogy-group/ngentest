@@ -5,7 +5,7 @@ var windowObjects = require('./lib/window-objects.js');
 
 module.exports = function getDirectiveData(tsParsed, filePath, angularType) {
   let result = initializeData(tsParsed, filePath);
-  populateInputsAndOutputs(tsParsed, result);
+  populateProperties(tsParsed, result);
   populateDependenciesUsage(tsParsed, result);
   populateDepsRecursive(result);
   // if ngOnInit exists we need to add it as a dependence all other methods
@@ -13,6 +13,7 @@ module.exports = function getDirectiveData(tsParsed, filePath, angularType) {
   populateDepsVarsMethods(result);
   populateParameters(tsParsed, result);
   populateProviders(tsParsed, result);
+  console.log(result.conditions);
 
   return result;
 }
@@ -249,24 +250,17 @@ function generateValueToGivenType(type) {
   }
 }
 
-function populateInputsAndOutputs(tsParsed, result) {
-  //
-  // Iterate properties
-  // . if @Input, build input attributes and input properties
-  // . if @Outpu, build output attributes and output properties
-  //
+function populateProperties(tsParsed, result) {
   for (var key in tsParsed.properties) {
     const prop = tsParsed.properties[key];
-    if (prop.body.match(/@Input\(/)) {
-      const attrName = (prop.body.match(/@Input\(['"](.*?)['"]\)/) || [])[1];
-      result.inputs.attributes.push(`[${attrName || key}]="${key}"`);
-      result.inputs.properties.push(`${key}: ${prop.type};`);
-    }
-    else if (prop.body.match(/@Output\(/)) {
-      const attrName = (prop.body.match(/@Output\(['"](.*?)['"]\)/) || [])[1];
-      const funcName = `on${key.replace(/^[a-z]/, x => x.toUpperCase())}`;
-      result.outputs.attributes.push(`(${attrName || key})="${funcName}($event)"`);
-      result.outputs.properties.push(`${funcName}(event): void { /* */ }`);
+    const private = (prop.body.indexOf("private") !== -1);
+    result.initialProperties[key] = {type: prop.type, private};
+
+    const s = "[\\r\\n\\t\\s]*";
+    const regex = new RegExp(`=${s}([^;]*);?$`, 'gm');
+    const match = regex.exec(prop.body);  
+    if(match) {
+      result.initialProperties[key].value = match[1];
     }
   }
 }
@@ -277,16 +271,13 @@ function initializeData(tsParsed, filePath) {
     imports: {
       [`./${path.basename(filePath)}`.replace(/.ts$/, '')]: [tsParsed.name]
     },
-    inputs: { attributes: [], properties: [] },
-    outputs: { attributes: [], properties: [] },
     providers: {},
-    mocks: {},
-    functionTests: {},
     depsVariables: {},
     depsUsage: {},
     localUsage: {},
     conditions: {},
     defaultParameters: {},
+    initialProperties: {},
     useMockito: false
   };
 }

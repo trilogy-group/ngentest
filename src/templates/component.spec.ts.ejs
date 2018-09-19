@@ -11,7 +11,6 @@ import { mock } from 'ts-mockito';
 <% for(var key in imports) { -%>
 import {<%- imports[key].map(el => `${el}`).join(', ') -%>} from '<%- key -%>';
 <% } -%>
-<%-                        -%>
 
 // --------------- CONFIGURATION - START -------------------//
 // MOCKED METHODS RETURNS
@@ -22,6 +21,7 @@ import {<%- imports[key].map(el => `${el}`).join(', ') -%>} from '<%- key -%>';
 const <%-dep%>_<%-usedMethod%> = of({});
 <% }); -%>
 <% } -%>
+
 // MOCKED INJECTED DEPENDENCES
 // The mocks of dependencies that can't be mocked with mockito. Please, change as needed.
 <% for(var dep in depsVariables) { 
@@ -32,9 +32,10 @@ const <%-dep%>Mock = {
 <% }); -%>
 };
 <% } -%>
+
 // PARAMETERS USED WITH METHODS
 // This is the parameters values used in tests. Please, change as needed.
-<% for(var method in defaultParameters) { params = defaultParameters[method]; -%>
+<% for(var method in defaultParameters) { var params = defaultParameters[method]; -%>
 <% for(var index in params.names) { -%>
 const <%-method%>_<%-params.names[index]%>: <%-params.types[index]%> = <%-params.values[index]%>;
 <% } -%>
@@ -71,13 +72,30 @@ describe('<%= className %>', () => {
     component = fixture.componentInstance;
   });
 
-  it('should be created', async(() => {
+  it("should be created", async(() => {
     expect(component).toBeTruthy();
   }));
 
-<% for(var method in depsUsage) { -%>
+<% for(var prop in initialProperties) { 
+    if(initialProperties[prop].private || !initialProperties[prop]['value']) continue; -%>
+  it("[<%-prop%>] should be initialized with value <%-initialProperties[prop].value%>.", async(() => {
+    expect(component.<%-prop%>).toBe(<%-initialProperties[prop].value%>);
+  }));
+<% } -%>
+<% for(var method in depsUsage) {
+    var propConditions = [];
+    conditions[method]
+      .filter(cond => (cond['variable'] && !initialProperties[cond['variable']].private))
+      .forEach((cond) => {
+        propConditions.push({...cond, value: true});
+        propConditions.push({...cond, value: false});
+    });
+    if(!propConditions.length) propConditions = [{}]; -%>
 
-  it('[<%-method %>] should runs without errors and uses its dependencies.', () => {
+<% propConditions.forEach(cond => { 
+  var msg = `[${method}] should runs without errors and uses its dependencies`;
+  msg += (cond['variable']) ? ` setting ${cond.variable} = ${cond.value}` : ''; -%> 
+  it("<%-msg%>", () => {
 <% for(var dep in depsUsage[method]) { -%>
 <% depsUsage[method][dep].forEach((usedMethod) => { -%>
 <% if(!usedMethod.conditions.length) { -%>
@@ -89,6 +107,9 @@ describe('<%= className %>', () => {
 <% } -%>
 <% } -%>
 <% }); -%>
+<% } -%>
+<% if(cond['variable']) { -%>
+    component.<%-cond.variable%> = <%-cond.value%>;    
 <% } -%>
     component.<%-method %>(<%-
       (defaultParameters[method].names.length) ?
@@ -105,6 +126,7 @@ describe('<%= className %>', () => {
 <% }); -%>
 <% } -%>
   });
+<% }); -%>
 <% } -%>
 
 });
