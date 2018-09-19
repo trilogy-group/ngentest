@@ -31,12 +31,10 @@ function getImportLib(mports, className) {
   mports.forEach(mport => {
     if (mport.specifiers) {
       mport.specifiers.forEach(el => { // e.g. 'Inject', 'Inject as foo'
-        if (el.indexOf(className) !== -1) {
+        if (el === className) {
           lib = mport.from; // e.g. '@angular/core'
         }
       });
-    } else {
-      lib = mport.from;
     }
   });
 

@@ -12,9 +12,34 @@ import { mock } from 'ts-mockito';
 import {<%- imports[key].map(el => `${el}`).join(', ') -%>} from '<%- key -%>';
 <% } -%>
 <%-                        -%>
-<% for(var key in mocks) { -%>
-<%- mocks[key] -%>
+
+// --------------- CONFIGURATION - START -------------------//
+// MOCKED METHODS RETURNS
+// The mocks of methods returns below are used with spies. Please, change it as you desire.
+<% for(var dep in depsVariables) { 
+    if(depsVariables[dep].injected) continue; -%>
+<% depsVariables[dep].methods.forEach((usedMethod) => { -%>
+const <%-dep%>_<%-usedMethod%> = of({});
+<% }); -%>
 <% } -%>
+// MOCKED INJECTED DEPENDENCES
+// The mocks of dependencies that can't be mocked with mockito. Please, change as needed.
+<% for(var dep in depsVariables) { 
+    if(!depsVariables[dep].injected) continue; -%>
+const <%-dep%>Mock = {
+<% depsVariables[dep].methods.forEach((usedMethod) => { -%>
+  <%-usedMethod%>: () => {},
+<% }); -%>
+};
+<% } -%>
+// PARAMETERS USED WITH METHODS
+// This is the parameters values used in tests. Please, change as needed.
+<% for(var method in defaultParameters) { params = defaultParameters[method]; -%>
+<% for(var index in params.names) { -%>
+const <%-method%>_<%-params.names[index]%>: <%-params.types[index]%> = <%-params.values[index]%>;
+<% } -%>
+<% } -%>
+// --------------- CONFIGURATION - END --------------------//
 
 describe('<%= className %>', () => {
 <% for(var dep in depsVariables) { -%>
@@ -46,7 +71,7 @@ describe('<%= className %>', () => {
     component = fixture.componentInstance;
   });
 
-  it('should create a component', async(() => {
+  it('should be created', async(() => {
     expect(component).toBeTruthy();
   }));
 
@@ -56,11 +81,20 @@ describe('<%= className %>', () => {
 <% for(var dep in depsUsage[method]) { -%>
 <% depsUsage[method][dep].forEach((usedMethod) => { -%>
 <% if(!usedMethod.conditions.length) { -%>
-    let <%-usedMethod.method %>Spy = spyOn(<%-dep%>, '<%-usedMethod.method %>').and.returnValue(of({}));
+<% if(depsVariables[dep].injected) { -%>
+    let <%-usedMethod.method %>Spy = spyOn(<%-dep%>, '<%-usedMethod.method %>');
+<% } else { -%>
+    let <%-usedMethod.method %>Spy = spyOn(<%-dep%>, '<%-usedMethod.method %>')
+      .and.returnValue(<%-dep%>_<%-usedMethod.method%>);
+<% } -%>
 <% } -%>
 <% }); -%>
 <% } -%>
-    component.<%-method %>();
+    component.<%-method %>(<%-
+      (defaultParameters[method].names.length) ?
+      method+"_"+defaultParameters[method].names.join(','+method+"_") :
+      ''
+    -%>);
     
     fixture.detectChanges();
 <% for(var dep in depsUsage[method]) { -%>

@@ -6,10 +6,13 @@ var windowObjects = require('./lib/window-objects.js');
 module.exports = function getDirectiveData(tsParsed, filePath, angularType) {
   let result = initializeData(tsParsed, filePath);
   populateInputsAndOutputs(tsParsed, result);
-  populateProviders(tsParsed, result);
   populateDependenciesUsage(tsParsed, result);
   populateDepsRecursive(result);
-  //addTestsToAllMethods(tsParsed, angularType, result);
+  // if ngOnInit exists we need to add it as a dependence all other methods
+  copyNgInitDepsToOtherMethods(result);
+  populateDepsVarsMethods(result);
+  populateParameters(tsParsed, result);
+  populateProviders(tsParsed, result);
 
   return result;
 }
@@ -34,23 +37,28 @@ function getUsagesRecursive(result, method) {
   methods.forEach((localMethod) => {
     flatMethods = [...flatMethods, ...getUsagesRecursive(result, localMethod)];
   });
-  return flatMethods;
+  return removeDuplicates(flatMethods);
 }
 
 function populateDepsRecursive(result) {
   for(let method in result.localUsage) {
     const methods = getUsagesRecursive(result, method);
     methods.forEach(localMethod => {
-      const deps = result.depsUsage[localMethod];
-      for(let dep in deps) {
-        if(result.depsUsage[method][dep] === undefined) {
-          result.depsUsage[method][dep] = deps[dep];
-        } else {
-          result.depsUsage[method][dep] = [...result.depsUsage[method][dep], ...deps[dep]];
-          result.depsUsage[method][dep] = removeDuplicates(result.depsUsage[method][dep]);
-        }
-      }
+      copyDependencies(result, localMethod, method);
     });
+  }
+}
+
+function copyDependencies(result, sourceMethod, targetMethod) {
+  const deps = result.depsUsage[sourceMethod];
+  for (let dep in deps) {
+    if (result.depsUsage[targetMethod][dep] === undefined) {
+      result.depsUsage[targetMethod][dep] = deps[dep];
+    }
+    else {
+      result.depsUsage[targetMethod][dep] = [...result.depsUsage[targetMethod][dep], ...deps[dep]];
+      result.depsUsage[targetMethod][dep] = removeDuplicates(result.depsUsage[targetMethod][dep]);
+    }
   }
 }
 
@@ -60,6 +68,16 @@ function populateDependenciesUsage(tsParsed, result) {
     const body = tsParsed.methods[key].body;
     addDepsUsage(result, key, body);
     addLocalUsages(result, key, body, tsParsed.methods);
+  }
+}
+
+function copyNgInitDepsToOtherMethods(result) {
+  if (result.localUsage.ngOnInit === undefined) return;
+
+  for (let localMethod in result.localUsage) {
+    if (localMethod !== "ngOnInit") {
+      copyDependencies(result, "ngOnInit", localMethod);
+    }
   }
 }
 
@@ -74,23 +92,23 @@ function addLocalUsages(result, key, body, methods) {
   }
 }
 
-function addDepsUsage(result, key, body) {
-  result.depsUsage[key] = {};
-  result.conditions[key] = {};
+function addDepsUsage(result, methodName, body) {
+  result.depsUsage[methodName] = {};
+  result.conditions[methodName] = {};
   for (let dep in result.depsVariables) {
     let usages = getUsage(dep, body);
-    result.conditions[key] = getUsagesInsideIfBranch(dep, body);
+    result.conditions[methodName] = getUsagesInsideIfBranch(dep, body);
     if (usages.length) {
       usages = usages.map(method => {
         conditions = [];
-        result.conditions[key]
+        result.conditions[methodName]
           .filter(branch => branch.usages.includes(method))
           .forEach(branch => {
             conditions.push(branch.condition);
           })
         return {method, conditions};
       });
-      result.depsUsage[key][dep] = usages;
+      result.depsUsage[methodName][dep] = usages;
     }
   }
 }
@@ -147,24 +165,19 @@ function getUsagesInsideIfBranch(variable, methodBody) {
 }
 
 function populateProviders(tsParsed, result) {
-  tsParsed.constructor.parameters.forEach(param => {
-    // handle @Inject(XXXXXXXXX)
-    const importLib = getImportLib(tsParsed.imports, param.type);
-    const matches = param.body.match(/@Inject\(([A-Z0-9_]+)\)/);
-    if (matches) {
-      let className = matches[1];
-      let lib = getImportLib(tsParsed.imports, className);
-      result.imports[lib] = result.imports[lib] || [];
-      result.imports[lib].push(className);
-      result.providers[matches[1]] = `{ provide: ${className}, useValue: {} }`;
-    }
-    else {
+  for(var dep in result.depsVariables) {
+    const depData = result.depsVariables[dep];
+    var className;
+    if(depData.injected) {
+      className = depData.testBed;
+      result.providers[className] = `{ provide: ${className}, useValue: ${dep}Mock }`;
+    } else {
       result.useMockito = true;
-      result.imports[importLib] = result.imports[importLib] || [];
-      result.imports[importLib].push(param.type);
-      result.providers[param.type] = `{ provide: ${param.type}, useFactory: () => mock(${param.type}) }`;
+      className = depData.type;
+      result.providers[className] = `{ provide: ${className}, useFactory: () => mock(${className}) }`;
     }
-  });
+    addImport(tsParsed.imports, result, className);
+  }
 }
 
 function populateDepsVariables(tsParsed, result) {
@@ -175,9 +188,65 @@ function populateDepsVariables(tsParsed, result) {
     const matches = param.body.match(/@Inject\(([A-Z0-9_]+)\)/);
     if (matches) {
       dep.testBed = matches[1];
+      dep.injected = true;
     }
     result.depsVariables[param.name] = dep;
   });
+}
+
+function populateDepsVarsMethods(result) {
+  for(var method in result.depsUsage) {
+    for(var dep in result.depsUsage[method]) {
+      if(result.depsVariables[dep]["methods"] === undefined) {
+        result.depsVariables[dep]["methods"] = [];
+      }
+      result.depsVariables[dep].methods = [
+        ...result.depsVariables[dep].methods, 
+        ...result.depsUsage[method][dep].map(methodData => methodData.method)
+      ];
+    }
+  }
+  for(var dep in result.depsVariables) {
+    result.depsVariables[dep].methods = removeDuplicates(result.depsVariables[dep].methods);
+  }
+}
+
+function populateParameters(tsParsed, result) {
+  for(var method in tsParsed.methods) {
+    result.defaultParameters[method] = {names: [], values: [], types: []};
+    tsParsed.methods[method].parameters.forEach(parameter => {
+      result.defaultParameters[method].names.push(parameter.name);
+      result.defaultParameters[method].types.push(parameter.type);
+      const typeValue = generateValueToGivenType(parameter.type);
+      result.defaultParameters[method].values.push(typeValue.value);
+      if(!typeValue.primitive) {
+        addImport(tsParsed.imports, result, parameter.type);
+      }
+    });
+  }
+}
+
+function addImport(imports, result, className) {
+  const importLib = getImportLib(imports, className);
+  result.imports[importLib] = result.imports[importLib] || [];
+  if(!result.imports[importLib].includes(className)) {
+    result.imports[importLib].push(className);
+  }
+}
+
+function generateValueToGivenType(type) {
+  switch(type) {
+    case "number":
+      return {value: "1", primitive: true};
+    case "string":
+      return {value: "''", primitive: true};
+    case "boolean":
+      return {value: "false", primitive: true};
+    case "Array":
+      return {value: "[]", primitive: true};
+    default:
+      return {value: "{}", primitive: false};
+  }
 }
 
 function populateInputsAndOutputs(tsParsed, result) {
@@ -217,6 +286,7 @@ function initializeData(tsParsed, filePath) {
     depsUsage: {},
     localUsage: {},
     conditions: {},
+    defaultParameters: {},
     useMockito: false
   };
 }
