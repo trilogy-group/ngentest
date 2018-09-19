@@ -4,19 +4,183 @@ var reIndent = require('./lib/util.js').reIndent;
 var windowObjects = require('./lib/window-objects.js');
 
 module.exports = function getDirectiveData(tsParsed, filePath, angularType) {
-  let result = {
-    className: tsParsed.name,
-    imports: {
-      [`./${path.basename(filePath)}`.replace(/.ts$/,'')]: [tsParsed.name], // the directive itself
-      '@angular/core': ['Component', 'Directive']
-    },
-    inputs: {attributes: [], properties: []},
-    outputs: {attributes: [], properties: []},
-    providers: {},
-    mocks: {},
-    functionTests: {}
-  };
+  let result = initializeData(tsParsed, filePath);
+  populateInputsAndOutputs(tsParsed, result);
+  populateProviders(tsParsed, result);
+  populateDependenciesUsage(tsParsed, result);
+  populateDepsRecursive(result);
+  //addTestsToAllMethods(tsParsed, angularType, result);
 
+  return result;
+}
+
+function addTestsToAllMethods(tsParsed, angularType, result) {
+  for (var key in tsParsed.methods) {
+    let method = tsParsed.methods[key];
+    let parameters = method.parameters.map(el => el.name).join(', ');
+    let js = `${angularType.toLowerCase()}.${key}(${parameters})`;
+    (method.type !== 'void') && (js = `const result = ${js}`);
+    result.functionTests[key] = reIndent(`
+      it('should run #${key}()', async(() => {
+        // ${js};
+      }));
+    `, '  ');
+  }
+}
+
+function getUsagesRecursive(result, method) {
+  let methods = result.localUsage[method];
+  let flatMethods = methods;
+  methods.forEach((localMethod) => {
+    flatMethods = [...flatMethods, ...getUsagesRecursive(result, localMethod)];
+  });
+  return flatMethods;
+}
+
+function populateDepsRecursive(result) {
+  for(let method in result.localUsage) {
+    const methods = getUsagesRecursive(result, method);
+    methods.forEach(localMethod => {
+      const deps = result.depsUsage[localMethod];
+      for(let dep in deps) {
+        if(result.depsUsage[method][dep] === undefined) {
+          result.depsUsage[method][dep] = deps[dep];
+        } else {
+          result.depsUsage[method][dep] = [...result.depsUsage[method][dep], ...deps[dep]];
+          result.depsUsage[method][dep] = removeDuplicates(result.depsUsage[method][dep]);
+        }
+      }
+    });
+  }
+}
+
+function populateDependenciesUsage(tsParsed, result) {
+  populateDepsVariables(tsParsed, result);
+  for(let key in tsParsed.methods) {
+    const body = tsParsed.methods[key].body;
+    addDepsUsage(result, key, body);
+    addLocalUsages(result, key, body, tsParsed.methods);
+  }
+}
+
+function addLocalUsages(result, key, body, methods) {
+  result.localUsage[key] = [];
+  for(let localMethod in methods) {
+    if(localMethod === key) continue;
+    const isUsed = getLocalMethodUsage(localMethod, body);
+    if(isUsed) {
+      result.localUsage[key].push(localMethod);
+    }
+  }
+}
+
+function addDepsUsage(result, key, body) {
+  result.depsUsage[key] = {};
+  result.conditions[key] = {};
+  for (let dep in result.depsVariables) {
+    let usages = getUsage(dep, body);
+    result.conditions[key] = getUsagesInsideIfBranch(dep, body);
+    if (usages.length) {
+      usages = usages.map(method => {
+        conditions = [];
+        result.conditions[key]
+          .filter(branch => branch.usages.includes(method))
+          .forEach(branch => {
+            conditions.push(branch.condition);
+          })
+        return {method, conditions};
+      });
+      result.depsUsage[key][dep] = usages;
+    }
+  }
+}
+
+function getUsage(variable, methodBody) {
+  let usages = [];
+  const regex = new RegExp("this[\\r\\n\\s]*\\."+variable+"[\\r\\n\\s]*\\.([^\\(]*)\\(", 'g');
+  let match = regex.exec(methodBody);
+  while(match != null) {
+    usages.push(match[1]);
+    match = regex.exec(methodBody);
+  }
+  return usages;
+}
+
+function getLocalMethodUsage(localMethod, methodBody) {
+  const regex = new RegExp("this[\\r\\n\\s]*\\."+localMethod+"\\(");
+  return !!regex.exec(methodBody);
+}
+
+function getCloserIndex(body) {
+  let n = 0;
+  let opens = 0;
+  do {
+    n = body.indexOf("{", n+1);
+    if(n === -1) break;
+    opens++;
+    n = body.indexOf("}", n+1);
+    if(n === -1) break;
+    opens--;
+    if(opens === 0) return n;
+  } while(n !== -1);
+  return 0;
+}
+
+function getUsagesInsideIfBranch(variable, methodBody) {
+  let branches = [];
+  const s = "[\\r\\n\\t\\s]*";
+  const regex = new RegExp(`if${s}\\(${s}(.*)${s}\\)${s}\\{`, 'g');
+  let match = regex.exec(methodBody);
+  while(match != null) {
+    const end = getCloserIndex(methodBody.substring(match.index));
+    const ifBody = methodBody.substring(match.index, end);
+    let branch = { 
+      condition: match[1], 
+      usages: getUsage(variable, ifBody)
+    };
+    let matchVar = branch.condition.match(/^this.([a-zA-Z0-9]*)$/m);
+    if(matchVar) branch.variable = matchVar[1];
+    branches.push(branch);
+    match = regex.exec(methodBody);
+  }
+  return branches;
+}
+
+function populateProviders(tsParsed, result) {
+  tsParsed.constructor.parameters.forEach(param => {
+    // handle @Inject(XXXXXXXXX)
+    const importLib = getImportLib(tsParsed.imports, param.type);
+    const matches = param.body.match(/@Inject\(([A-Z0-9_]+)\)/);
+    if (matches) {
+      let className = matches[1];
+      let lib = getImportLib(tsParsed.imports, className);
+      result.imports[lib] = result.imports[lib] || [];
+      result.imports[lib].push(className);
+      result.providers[matches[1]] = `{ provide: ${className}, useValue: {} }`;
+    }
+    else {
+      result.useMockito = true;
+      result.imports[importLib] = result.imports[importLib] || [];
+      result.imports[importLib].push(param.type);
+      result.providers[param.type] = `{ provide: ${param.type}, useFactory: () => mock(${param.type}) }`;
+    }
+  });
+}
+
+function populateDepsVariables(tsParsed, result) {
+  tsParsed.constructor.parameters.forEach(param => {
+    if(!param.body) return;
+    let dep = {type: param.type, testBed: param.type};
+
+    const matches = param.body.match(/@Inject\(([A-Z0-9_]+)\)/);
+    if (matches) {
+      dep.testBed = matches[1];
+    }
+    result.depsVariables[param.name] = dep;
+  });
+}
+
+function populateInputsAndOutputs(tsParsed, result) {
   //
   // Iterate properties
   // . if @Input, build input attributes and input properties
@@ -28,101 +192,41 @@ module.exports = function getDirectiveData(tsParsed, filePath, angularType) {
       const attrName = (prop.body.match(/@Input\(['"](.*?)['"]\)/) || [])[1];
       result.inputs.attributes.push(`[${attrName || key}]="${key}"`);
       result.inputs.properties.push(`${key}: ${prop.type};`);
-    } else if (prop.body.match(/@Output\(/)) {
+    }
+    else if (prop.body.match(/@Output\(/)) {
       const attrName = (prop.body.match(/@Output\(['"](.*?)['"]\)/) || [])[1];
       const funcName = `on${key.replace(/^[a-z]/, x => x.toUpperCase())}`;
       result.outputs.attributes.push(`(${attrName || key})="${funcName}($event)"`);
       result.outputs.properties.push(`${funcName}(event): void { /* */ }`);
     }
   }
+}
 
-  //
-  // Iterate constructor parameters
-  //  . if this pattern, `@Inject(PLATFORM_ID)`,
-  //    . add Inject, PLATFORM_ID to result.imports
-  //    . create provider with value
-  //  . if type is found at tsParsed.imports, 
-  //    . add the type to result.imports
-  //    . if type is ElementRef,
-  //      . create a mock class
-  //      . add to result.providers with mock
-  //    . if source starts from './', which is a user-defined injectable
-  //      . create a mock class
-  //      . add te result.providers with mock 
-  //    . otherwise, add to result.providers
-  //
-  tsParsed.constructor.parameters.forEach(param => { // name, type, body
-    // handle @Inject(XXXXXXXXX)
-    const importLib = getImportLib(tsParsed.imports, param.type);
-    const matches = param.body.match(/@Inject\(([A-Z0-9_]+)\)/);
+function initializeData(tsParsed, filePath) {
+  return {
+    className: tsParsed.name,
+    imports: {
+      [`./${path.basename(filePath)}`.replace(/.ts$/, '')]: [tsParsed.name]
+    },
+    inputs: { attributes: [], properties: [] },
+    outputs: { attributes: [], properties: [] },
+    providers: {},
+    mocks: {},
+    functionTests: {},
+    depsVariables: {},
+    depsUsage: {},
+    localUsage: {},
+    conditions: {},
+    useMockito: false
+  };
+}
 
-    if (matches) {
-      let className = matches[1]
-      let lib1 = getImportLib(tsParsed.imports, 'Inject');
-      let lib2 = getImportLib(tsParsed.imports, className);
-      result.imports[lib1] = result.imports[lib1] || [];
-      result.imports[lib2] = result.imports[lib2] || [];
-      result.imports[lib1].push('Inject');
-      result.imports[lib2].push(className);
-
-      result.providers[matches[1]] = `{provide: ${className},useValue: 'browser'}`;
-    } else if (param.type == 'ElementRef') {
-      result.imports[importLib] = result.imports[importLib] || [];
-      result.imports[importLib].push(param.type);
-      result.mocks[param.type] = reIndent(`
-        class Mock${param.type} extends ${param.type} {
-          constructor() { super(undefined); }
-          nativeElement = {}
-        }`);
-      result.providers[param.type] = `{provide: ${param.type}, useClass: Mock${param.type}}`;
-    } else if (importLib.match(/^[\.]+/)) {  // starts from . or .., which is a user-defined provider
-      result.imports[importLib] = result.imports[importLib] || [];
-      result.imports[importLib].push(param.type);
-      result.mocks[param.type] = reIndent(`
-        class Mock${param.type} extends ${param.type} {
-        }
-      `);
-      result.providers[param.type] = `{provide: ${param.type}, useClass: Mock${param.type}}`;
-    } else {
-      result.imports[importLib] = result.imports[importLib] || [];
-      result.imports[importLib].push(param.type);
-      result.providers[param.type] = `${param.type}`;
-    }
-  });
-
-  //
-  // Iterate properties
-  //  . if property type is a windows type
-  //    then create mock with (windows<any>) with the value of `jest.fn()``
-  //
-  for (var key in tsParsed.properties) {
-    let prop = tsParsed.properties[key];
-    let basicTypes = ['boolean', 'number', 'string', 'Array', 'any', 'void', 'null', 'undefined', 'never'];
-    let importLib = getImportLib(tsParsed.imports, prop.type);
-    if (importLib || basicTypes.includes(prop.type)) {
-      continue;
-    } else if (windowObjects.includes(prop.type)) {
-      result.mocks[prop.type] = reIndent(`
-        (<any>window).${prop.type} = jest.fn();
-      `);
-    }
+function removeDuplicates(arr){
+  let unique_array = [];
+  for(let i = 0;i < arr.length; i++){
+      if(unique_array.indexOf(arr[i]) == -1){
+          unique_array.push(arr[i]);
+      }
   }
-
-  //
-  // Iterate methods
-  //  . Javascript to call the function with parameter;
-  //
-  for (var key in tsParsed.methods) {
-    let method = tsParsed.methods[key];
-    let parameters = method.parameters.map(el => el.name).join(', ');
-    let js = `${angularType.toLowerCase()}.${key}(${parameters})`;
-    (method.type !== 'void') && (js = `const result = ${js}`); 
-    result.functionTests[key] = reIndent(`
-      it('should run #${key}()', async(() => {
-        // ${js};
-      }));
-    `, '  ');
-  }
-
-  return result;
+  return unique_array;
 }

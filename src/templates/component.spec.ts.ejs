@@ -1,5 +1,12 @@
 // tslint:disable
+import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { async, ComponentFixture, TestBed } from '@angular/core/testing';
+<% for(var dep in depsVariables) { -%>
+import { of } from 'rxjs/observable/of';
+<% break; } -%>
+<% if(useMockito) { -%>
+import { mock } from 'ts-mockito';
+<% } -%>
 
 <% for(var key in imports) { -%>
 import {<%- imports[key].map(el => `${el}`).join(', ') -%>} from '<%- key -%>';
@@ -10,28 +17,60 @@ import {<%- imports[key].map(el => `${el}`).join(', ') -%>} from '<%- key -%>';
 <% } -%>
 
 describe('<%= className %>', () => {
-  let fixture;
-  let component;
+<% for(var dep in depsVariables) { -%>
+  let <%-dep%>: <%- depsVariables[dep].type %>;
+<% } -%>
+  let component: <%= className %>;
+  let fixture: ComponentFixture<%-minorSig%>typeof component<%-majorSig%>;
 
-  beforeEach(() => {
+  beforeEach(async(() => {
     TestBed.configureTestingModule({
       declarations: [
         <%= className %>
       ],
       providers: [<% for(var key in providers) { %>
         <%- providers[key]+ ',' %><% } %>
-      ]
-    }).compileComponents();
+      ],
+      schemas: [
+        NO_ERRORS_SCHEMA,
+      ],
+    })
+    .compileComponents();
+  }));
+
+  beforeEach(() => {
+<% for(var dep in depsVariables) { -%>
+    <%-dep%> = TestBed.get(<%- depsVariables[dep].testBed %>);
+<% } -%>
     fixture = TestBed.createComponent(<%= className %>);
-    component = fixture.debugElement.componentInstance;
+    component = fixture.componentInstance;
   });
 
   it('should create a component', async(() => {
     expect(component).toBeTruthy();
   }));
-  
-  <% for(var key in functionTests) { -%>
-  <%- functionTests[key] -%>
-  <% } -%>
-  
+
+<% for(var method in depsUsage) { -%>
+
+  it('[<%-method %>] should runs without errors and uses its dependencies.', () => {
+<% for(var dep in depsUsage[method]) { -%>
+<% depsUsage[method][dep].forEach((usedMethod) => { -%>
+<% if(!usedMethod.conditions.length) { -%>
+    let <%-usedMethod.method %>Spy = spyOn(<%-dep%>, '<%-usedMethod.method %>').and.returnValue(of({}));
+<% } -%>
+<% }); -%>
+<% } -%>
+    component.<%-method %>();
+    
+    fixture.detectChanges();
+<% for(var dep in depsUsage[method]) { -%>
+<% depsUsage[method][dep].forEach((usedMethod) => { -%>
+<% if(!usedMethod.conditions.length) { -%>
+    expect(<%-usedMethod.method %>Spy).toHaveBeenCalled();
+<% } -%>
+<% }); -%>
+<% } -%>
+  });
+<% } -%>
+
 });

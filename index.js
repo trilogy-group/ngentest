@@ -26,17 +26,17 @@ var typescript = fs.readFileSync(path.resolve(tsFile), 'utf8');
 parseTypescript(typescript).then(tsParsed => {
   const angularType = util.getAngularType(typescript); // Component, Directive, Injectable, Pipe, or undefined
   const ejsTemplate = util.getEjsTemplate(angularType);
-  let ejsData;
+  let ejsData = {minorSig: "<", majorSig: ">"};
   switch(angularType) {
     case 'Component':
     case 'Directive':
-      ejsData = getDirectiveData(tsParsed, tsFile, angularType);
+      ejsData = {...ejsData, ...getDirectiveData(tsParsed, tsFile, angularType)};
       break;
     case 'Injectable':
-      ejsData = getInjectableData(tsParsed, tsFile);
+      ejsData = {...ejsData, ...getInjectableData(tsParsed, tsFile)};
       break;
     case 'Pipe':
-      ejsData = getPipeData(tsParsed, tsFile);
+      ejsData = {...ejsData, ...getPipeData(tsParsed, tsFile)};
       break;
     default:
       ejsData = getDefaultData(tsParsed, tsFile);
