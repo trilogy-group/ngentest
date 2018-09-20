@@ -13,7 +13,7 @@ module.exports = function getDirectiveData(tsParsed, filePath, angularType) {
   populateDepsVarsMethods(result);
   populateParameters(tsParsed, result);
   populateProviders(tsParsed, result);
-  console.log(result.conditions);
+  console.log(result.depsUsage.onStatusClick);
 
   return result;
 }
@@ -101,17 +101,38 @@ function addDepsUsage(result, methodName, body) {
     result.conditions[methodName] = getUsagesInsideIfBranch(dep, body);
     if (usages.length) {
       usages = usages.map(method => {
+        const errorMessage = getErrorCatch(dep, method, body);
         conditions = [];
         result.conditions[methodName]
           .filter(branch => branch.usages.includes(method))
           .forEach(branch => {
             conditions.push(branch.condition);
-          })
-        return {method, conditions};
+          });
+        if(errorMessage && !conditions.length) result.useThrow = true;
+        return {method, conditions, errorMessage};
       });
-      result.depsUsage[methodName][dep] = usages;
+      result.depsUsage[methodName][dep] = removeDuplicates(usages);
     }
   }
+  result.depsDirectUsage[methodName] = {...result.depsUsage[methodName]};
+}
+
+function getErrorCatch(variable, methodCalled, methodBody) {
+  const s = "[\\r\\n\\t\\s]*";
+  const regexOfCall = 
+    new RegExp(`${variable}${s}\\.${s}${methodCalled}${s}\\([\\s\\S]*\\)${s}.${s}subscribe${s}\\(`, 'g');
+
+  const matchCall = regexOfCall.exec(methodBody);
+  if(!matchCall) {
+    return false;
+  }
+  const body = methodBody.substring(matchCall.index);
+  const regexOfError = new RegExp(`\\(?error\\)?${s}=>${s}[^'"]*['"](.*)['"]`, 'g');
+  const matchError = regexOfError.exec(body);
+  if(!matchError) {
+    return false;
+  }
+  return matchError[1];
 }
 
 function getUsage(variable, methodBody) {
@@ -274,20 +295,25 @@ function initializeData(tsParsed, filePath) {
     providers: {},
     depsVariables: {},
     depsUsage: {},
+    depsDirectUsage: {},
     localUsage: {},
     conditions: {},
     defaultParameters: {},
     initialProperties: {},
-    useMockito: false
+    useMockito: false,
+    useThrow: false,
   };
 }
 
 function removeDuplicates(arr){
   let unique_array = [];
-  for(let i = 0;i < arr.length; i++){
-      if(unique_array.indexOf(arr[i]) == -1){
+  let strUniqueArr = [];
+  for(let i = 0; i < arr.length; i++){
+      if(strUniqueArr.indexOf(JSON.stringify(arr[i])) == -1){
+          strUniqueArr.push(JSON.stringify(arr[i]));
           unique_array.push(arr[i]);
       }
   }
+  console.log(arr, unique_array, strUniqueArr);
   return unique_array;
 }

@@ -4,6 +4,9 @@ import { async, ComponentFixture, TestBed } from '@angular/core/testing';
 <% for(var dep in depsVariables) { -%>
 import { of } from 'rxjs/observable/of';
 <% break; } -%>
+<% if(useThrow) { -%>
+import { _throw } from 'rxjs/observable/throw';
+<% } -%>
 <% if(useMockito) { -%>
 import { mock } from 'ts-mockito';
 <% } -%>
@@ -12,18 +15,8 @@ import { mock } from 'ts-mockito';
 import {<%- imports[key].map(el => `${el}`).join(', ') -%>} from '<%- key -%>';
 <% } -%>
 
-// --------------- CONFIGURATION - START -------------------//
-// MOCKED METHODS RETURNS
-// The mocks of methods returns below are used with spies. Please, change it as you desire.
-<% for(var dep in depsVariables) { 
-    if(depsVariables[dep].injected) continue; -%>
-<% depsVariables[dep].methods.forEach((usedMethod) => { -%>
-const <%-dep%>_<%-usedMethod%> = of({});
-<% }); -%>
-<% } -%>
-
-// MOCKED INJECTED DEPENDENCES
-// The mocks of dependencies that can't be mocked with mockito. Please, change as needed.
+// MOCKS FOR INJECTED DEPENDENCES
+// The mocks of dependencies that can't be mocked with mockito is putted here. Please, change as needed.
 <% for(var dep in depsVariables) { 
     if(!depsVariables[dep].injected) continue; -%>
 const <%-dep%>Mock = {
@@ -32,17 +25,27 @@ const <%-dep%>Mock = {
 <% }); -%>
 };
 <% } -%>
+// ------------------------------
+// DEFAULT VALUES OF COMPLEX PARAMETERS
+// This section provides default values to be used as methods parameters.
+<% 
+const primitiveTypes = ["Array", "number", "string", "boolean"];
+const printedDefaultParam = [];
+for(var method in defaultParameters) { 
+  var params = defaultParameters[method]; 
+  for(var index in params.names) {
+    if(primitiveTypes.includes(params.types[index]) || 
+       printedDefaultParam.includes(params.types[index])) continue; 
+    printedDefaultParam.push(params.types[index]);
+-%>
+const default<%-params.types[index]%>: <%-params.types[index]%> = <%-params.values[index]%>;
+<%
+  }
+} 
+-%>
+// -----------------------------------
 
-// PARAMETERS USED WITH METHODS
-// This is the parameters values used in tests. Please, change as needed.
-<% for(var method in defaultParameters) { var params = defaultParameters[method]; -%>
-<% for(var index in params.names) { -%>
-const <%-method%>_<%-params.names[index]%>: <%-params.types[index]%> = <%-params.values[index]%>;
-<% } -%>
-<% } -%>
-// --------------- CONFIGURATION - END --------------------//
-
-describe('<%= className %>', () => {
+fdescribe('<%= className %>', () => {
 <% for(var dep in depsVariables) { -%>
   let <%-dep%>: <%- depsVariables[dep].type %>;
 <% } -%>
@@ -72,30 +75,32 @@ describe('<%= className %>', () => {
     component = fixture.componentInstance;
   });
 
+<% // TESTING THE CREATION OF THE COMPONENT 
+%>
   it("should be created", async(() => {
     expect(component).toBeTruthy();
   }));
 
+<% // TESTING THE CORRECT INITIALIZATION OF THE PROPERTIES 
+%>
 <% for(var prop in initialProperties) { 
-    if(initialProperties[prop].private || !initialProperties[prop]['value']) continue; -%>
+    if(initialProperties[prop].private || 
+       !initialProperties[prop]['value']) continue; -%>
   it("[<%-prop%>] should be initialized with value <%-initialProperties[prop].value%>.", async(() => {
-    expect(component.<%-prop%>).toBe(<%-initialProperties[prop].value%>);
+    expect(component.<%-prop%>)<%-
+      (initialProperties[prop].value.indexOf("new") === 0 ||
+       initialProperties[prop].value.indexOf("[") === 0 ||
+       initialProperties[prop].value.indexOf("{") === 0) ?
+      '.not.toBeUndefined(' :
+      '.toBe('+initialProperties[prop].value
+    %>);
   }));
 <% } -%>
-<% for(var method in depsUsage) {
-    var propConditions = [];
-    conditions[method]
-      .filter(cond => (cond['variable'] && !initialProperties[cond['variable']].private))
-      .forEach((cond) => {
-        propConditions.push({...cond, value: true});
-        propConditions.push({...cond, value: false});
-    });
-    if(!propConditions.length) propConditions = [{}]; -%>
+<% // TESTING THE CORRECT CALLS OF THE DEPENDENCIES METHODS 
+%>
+<% for(var method in depsUsage) { -%>
 
-<% propConditions.forEach(cond => { 
-  var msg = `[${method}] should runs without errors and uses its dependencies`;
-  msg += (cond['variable']) ? ` setting ${cond.variable} = ${cond.value}` : ''; -%> 
-  it("<%-msg%>", () => {
+  it('[<%-method %>] should runs without errors and uses its dependencies.', () => {
 <% for(var dep in depsUsage[method]) { -%>
 <% depsUsage[method][dep].forEach((usedMethod) => { -%>
 <% if(!usedMethod.conditions.length) { -%>
@@ -103,18 +108,26 @@ describe('<%= className %>', () => {
     let <%-usedMethod.method %>Spy = spyOn(<%-dep%>, '<%-usedMethod.method %>');
 <% } else { -%>
     let <%-usedMethod.method %>Spy = spyOn(<%-dep%>, '<%-usedMethod.method %>')
-      .and.returnValue(<%-dep%>_<%-usedMethod.method%>);
+      // TODO: Change the return of <%-usedMethod.method %> method here if needed.
+      .and.returnValue(of({}));
 <% } -%>
 <% } -%>
 <% }); -%>
 <% } -%>
-<% if(cond['variable']) { -%>
-    component.<%-cond.variable%> = <%-cond.value%>;    
+<% var params = defaultParameters[method]; -%>
+<% if(params.names.length) { %>
+    // TODO: Change the parameters values here if needed.
+<% } -%>
+<% for(var index in params.names) { -%>
+    const <%-params.names[index]%>: <%-params.types[index]%> = <%-
+        (primitiveTypes.includes(params.types[index])) ? 
+        params.values[index] : 
+        "default"+params.types[index] %>;
 <% } -%>
     component.<%-method %>(<%-
-      (defaultParameters[method].names.length) ?
-      method+"_"+defaultParameters[method].names.join(','+method+"_") :
-      ''
+      (params.names.length) ?
+        params.names.join(', ') :
+        ''
     -%>);
     
     fixture.detectChanges();
@@ -125,8 +138,36 @@ describe('<%= className %>', () => {
 <% } -%>
 <% }); -%>
 <% } -%>
+    // TODO: Please put expectentions here, if needed.
+  });
+<% } -%>
+<% // TESTING THE ERROR CATCHING AND PUTING THE MESSAGE ON component.error 
+%>
+<% for(var method in depsDirectUsage) { -%>
+<% for(var dep in depsDirectUsage[method]) { -%>
+<% depsDirectUsage[method][dep].forEach((usedMethod) => { 
+  if(!usedMethod['errorMessage'] || usedMethod.conditions.length) return; 
+  var params = defaultParameters[method]; -%>
+
+  it('[<%-method %>] should set error message when <%-dep%>.<%-usedMethod.method%> throws an error.', () => {
+    spyOn(<%-dep%>, '<%-usedMethod.method %>').and.returnValue(_throw({}));
+    
+<% for(var index in params.names) { -%>
+    const <%-params.names[index]%>: <%-params.types[index]%> = <%-
+        (primitiveTypes.includes(params.types[index])) ? 
+        params.values[index] : 
+        "default"+params.types[index] %>;
+<% } -%>
+    component.<%-method %>(<%-
+      (params.names.length) ?
+        params.names.join(', ') :
+        ''
+    -%>);
+
+    expect(component.error).toBe('<%-usedMethod.errorMessage%>');
   });
 <% }); -%>
+<% } -%>
 <% } -%>
 
 });
