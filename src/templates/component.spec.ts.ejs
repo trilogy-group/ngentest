@@ -34,7 +34,7 @@ const <%-dep%>Mock = {
 <% } -%>
 // ------------------------------
 
-fdescribe('<%= className %>', () => {
+describe('<%= className %>', () => {
 <% for(var dep in depsVariables) { -%>
   let <%-dep%>: <%- depsVariables[dep].type %>;
 <% } -%>
@@ -63,7 +63,6 @@ fdescribe('<%= className %>', () => {
     fixture = TestBed.createComponent(<%= className %>);
     component = fixture.componentInstance;
   });
-
 <% // TESTING THE CREATION OF THE COMPONENT 
 %>
   it("should be created", async(() => {

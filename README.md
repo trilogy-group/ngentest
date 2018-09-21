@@ -18,12 +18,12 @@ Angular5+ Unit Test Generator For Components, Directive, Services and Pipes
     - the catching of errors that can be thrown by the dependencies methods
 
 ## Verifications that the generated tests DON'T do (yet):
-    - If some dependency is called passing the correct parameters.
-    - If some attribute of the component was directly affected and has the correct value after the execution.
-    - If the result of an async call is correctly stored in a component property.
-    - If the result of the called method was the expected value.
-    - If some dependency method was NOT called.
-    - If some attribute of the component did NOT has a wrong value.
+- If some dependency is called passing the correct parameters.
+- If some attribute of the component was directly affected and has the correct value after the execution.
+- If the result of an async call is correctly stored in a component property.
+- If the result of the called method was the expected value.
+- If some dependency method was NOT called.
+- If some attribute of the component did NOT has a wrong value.
 
 
 
