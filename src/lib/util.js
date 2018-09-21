@@ -47,9 +47,23 @@ function reIndent(str, prefix="") {
   return str.replace(regExp, "\n" + prefix);
 }
 
+function removeDuplicates(arr){
+  let unique_array = [];
+  let strUniqueArr = [];
+  if(!arr) return [];
+  for(let i = 0; i < arr.length; i++){
+      if(strUniqueArr.indexOf(JSON.stringify(arr[i])) == -1){
+          strUniqueArr.push(JSON.stringify(arr[i]));
+          unique_array.push(arr[i]);
+      }
+  }
+  return unique_array;
+}
+
 module.exports = {
   getAngularType,
   getEjsTemplate,
   getImportLib,
-  reIndent
+  reIndent,
+  removeDuplicates,
 };
