@@ -1,10 +1,13 @@
-import {
-  Component, ContentChild, ElementRef, EventEmitter,
-  Inject, Input, OnDestroy, OnInit, Output,
-  PLATFORM_ID, Renderer2, TemplateRef, ViewChild
- } from '@angular/core';
-import { isPlatformBrowser } from '@angular/common';
-import * as _ from 'lodash';
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import { finalize, map, takeUntil } from 'rxjs/operators';
+import { Subject } from 'rxjs/Subject';
+
+// Examples of models and dependecies
+import { User } from 'example/models/user.model';
+import { UserService } from 'example/services/user.service';
+
+// An example of a token that can be injected
+import { WINDOW_TOKEN } from 'example/tokens/window.token';
 
 @Component({
   selector: 'ngui-inview',
@@ -14,43 +17,57 @@ import * as _ from 'lodash';
   `,
   styles: [':host {display: block;}']
 })
-export class MyComponent implements OnInit {
-  @ContentChild(TemplateRef) template: TemplateRef<any>;
-  @Input() options: any = {threshold: [.1, .2, .3, .4, .5, .6, .7, .8]};
-  @Output() inview: EventEmitter<any> = new EventEmitter();
-  @Output() notInview: EventEmitter<any> = new EventEmitter();
+export class MyComponent implements OnInit, OnDestroy {
+  private destroy$ = new Subject();
 
-  observer: IntersectionObserver;
-  isInview = false;
-  once80PctVisible = false;
+  public isLoading: boolean = true;
+  public totalElements = 0;
 
-  constructor(
-    private element: ElementRef,
-    private renderer: Renderer2,
-    @Inject(PLATFORM_ID) private platformId: any) { }
+  public users: User[];
+  public currentQuery: string = '';
+  public error: string;
 
-  ngOnInit(): void {
-    if (isPlatformBrowser(this.platformId)) {
-      this.observer = new IntersectionObserver(this.handleIntersect.bind(this), this.options);
-      this.observer.observe(this.element.nativeElement);
-    }
+  public constructor(
+    private userService: UserService,
+    @Inject(WINDOW_TOKEN) private window: Window,
+  ) { }
+
+  // using a dependency in ngOnInit (all tests needs to work with it).
+  public ngOnInit(): void {
+    const callGetUsers = () => {
+      this.getUsers();
+    };
+    // just using the injected dependency
+    this.window.setTimeout(callGetUsers, 1000);
   }
 
-  handleIntersect(entries, observer): void {
-    entries.forEach((entry: IntersectionObserverEntry) => {
-      if (entry['isIntersecting']) {
-        this.isInview = true;
-        this.defaultInviewHandler(entry);
-        this.inview.emit(entry);
-      } else {
-        this.notInview.emit(entry);
-      }
-    });
+  public ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
-  defaultInviewHandler(entry): any {
-    if (this.once80PctVisible)        return false;
-    if (this.inview.observers.length) return false;
-    // more code hidden
+  // A method that uses a dependency method and catch the observable error
+  public getUsers(
+    query: string = this.currentQuery,
+  ): void {
+    this.currentQuery = query;
+
+    this.isLoading = true;
+    this.userService.listUsers(query)
+      .pipe(finalize(() => { this.isLoading = false; }))
+      .subscribe(
+        (users: User[]) => {
+          this.totalElements = users.length;
+          this.users = users;
+        },
+        error => {
+          this.error = 'An error happened while retrieving users data.';
+        }
+      );
+  }
+
+  // A method that uses a local method (and this used method calls a dependency)
+  public onRefresh(): void {
+    this.getUsers();
   }
 }
