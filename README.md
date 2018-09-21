@@ -26,8 +26,6 @@ Angular5+ Unit Test Generator For Components, Directive, Services and Pipes
 - If some attribute of the component did NOT has a wrong value.
 
 
-
-
 ## Install & Run
 ```
 $ npm install ngentest -g # to run this command anywhere
@@ -36,6 +34,9 @@ $ ngentest my.directive.ts -s # write unit test to my.directive.spec.ts
 $ ngentest my.pipe.ts > my.pipe.test.ts 
 $ ngentest my.service.ts # prints the generated file into stdout
 ```
+
+## Demonstration
+Follow this link to see a demostration of the tool: [demonstration](https://drive.google.com/file/d/1yI85buDHN5S5wB4WjFHCrjMcHYEUkN0n/view?usp=sharing)
 
 ## Examples
 ### comopent unit test  generated

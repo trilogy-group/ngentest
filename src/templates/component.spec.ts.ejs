@@ -27,7 +27,7 @@ import {<%- imports[key].map(el => `${el}`).join(', ') -%>} from '<%- key -%>';
 <% for(var dep in depsVariables) { 
     if(!depsVariables[dep].injected) continue; -%>
 const <%-dep%>Mock = {
-<% console.log(depsVariables); depsVariables[dep].methods.forEach((usedMethod) => { -%>
+<% depsVariables[dep].methods.forEach((usedMethod) => { -%>
   <%-usedMethod%>: () => {},
 <% }); -%>
 };
@@ -44,7 +44,8 @@ describe('<%= className %>', () => {
   beforeEach(async(() => {
     TestBed.configureTestingModule({
       declarations: [
-        <%= className %>
+        <%= className %>,
+        // TODO: If you are using any pipe inside of the HTML of your component, you need to put the pipe class here.
       ],
       providers: [<% for(var key in providers) { %>
         <%- providers[key]+ ',' %><% } %>
