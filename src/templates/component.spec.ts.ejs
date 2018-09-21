@@ -1,4 +1,9 @@
+<% // DECLARATIONS
+const primitiveTypes = ["Array", "number", "string", "boolean"];
+%>
 // tslint:disable
+<% // IMPORTS
+%>
 import { NO_ERRORS_SCHEMA } from '@angular/core';
 import { async, ComponentFixture, TestBed } from '@angular/core/testing';
 <% for(var dep in depsVariables) { -%>
@@ -15,35 +20,19 @@ import { mock } from 'ts-mockito';
 import {<%- imports[key].map(el => `${el}`).join(', ') -%>} from '<%- key -%>';
 <% } -%>
 
+<% // MOCKS AREA
+%>
 // MOCKS FOR INJECTED DEPENDENCES
 // The mocks of dependencies that can't be mocked with mockito is putted here. Please, change as needed.
 <% for(var dep in depsVariables) { 
     if(!depsVariables[dep].injected) continue; -%>
 const <%-dep%>Mock = {
-<% depsVariables[dep].methods.forEach((usedMethod) => { -%>
+<% console.log(depsVariables); depsVariables[dep].methods.forEach((usedMethod) => { -%>
   <%-usedMethod%>: () => {},
 <% }); -%>
 };
 <% } -%>
 // ------------------------------
-// DEFAULT VALUES OF COMPLEX PARAMETERS
-// This section provides default values to be used as methods parameters.
-<% 
-const primitiveTypes = ["Array", "number", "string", "boolean"];
-const printedDefaultParam = [];
-for(var method in defaultParameters) { 
-  var params = defaultParameters[method]; 
-  for(var index in params.names) {
-    if(primitiveTypes.includes(params.types[index]) || 
-       printedDefaultParam.includes(params.types[index])) continue; 
-    printedDefaultParam.push(params.types[index]);
--%>
-const default<%-params.types[index]%>: <%-params.types[index]%> = <%-params.values[index]%>;
-<%
-  }
-} 
--%>
-// -----------------------------------
 
 fdescribe('<%= className %>', () => {
 <% for(var dep in depsVariables) { -%>
@@ -119,10 +108,7 @@ fdescribe('<%= className %>', () => {
     // TODO: Change the parameters values here if needed.
 <% } -%>
 <% for(var index in params.names) { -%>
-    const <%-params.names[index]%>: <%-params.types[index]%> = <%-
-        (primitiveTypes.includes(params.types[index])) ? 
-        params.values[index] : 
-        "default"+params.types[index] %>;
+    const <%-params.names[index]%>: <%-params.types[index]%> = <%-params.values[index]%>;
 <% } -%>
     component.<%-method %>(<%-
       (params.names.length) ?
@@ -153,10 +139,7 @@ fdescribe('<%= className %>', () => {
     spyOn(<%-dep%>, '<%-usedMethod.method %>').and.returnValue(_throw({}));
     
 <% for(var index in params.names) { -%>
-    const <%-params.names[index]%>: <%-params.types[index]%> = <%-
-        (primitiveTypes.includes(params.types[index])) ? 
-        params.values[index] : 
-        "default"+params.types[index] %>;
+    const <%-params.names[index]%>: <%-params.types[index]%> = <%-params.values[index]%>;
 <% } -%>
     component.<%-method %>(<%-
       (params.names.length) ?

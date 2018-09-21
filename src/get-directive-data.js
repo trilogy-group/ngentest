@@ -8,28 +8,13 @@ module.exports = function getDirectiveData(tsParsed, filePath, angularType) {
   populateProperties(tsParsed, result);
   populateDependenciesUsage(tsParsed, result);
   populateDepsRecursive(result);
-  // if ngOnInit exists we need to add it as a dependence all other methods
+  // if ngOnInit exists we need to add it as a dependency to each other methods
   copyNgInitDepsToOtherMethods(result);
   populateDepsVarsMethods(result);
   populateParameters(tsParsed, result);
   populateProviders(tsParsed, result);
-  console.log(result.depsUsage.onStatusClick);
 
   return result;
-}
-
-function addTestsToAllMethods(tsParsed, angularType, result) {
-  for (var key in tsParsed.methods) {
-    let method = tsParsed.methods[key];
-    let parameters = method.parameters.map(el => el.name).join(', ');
-    let js = `${angularType.toLowerCase()}.${key}(${parameters})`;
-    (method.type !== 'void') && (js = `const result = ${js}`);
-    result.functionTests[key] = reIndent(`
-      it('should run #${key}()', async(() => {
-        // ${js};
-      }));
-    `, '  ');
-  }
 }
 
 function getUsagesRecursive(result, method) {
@@ -308,12 +293,12 @@ function initializeData(tsParsed, filePath) {
 function removeDuplicates(arr){
   let unique_array = [];
   let strUniqueArr = [];
+  if(!arr) return [];
   for(let i = 0; i < arr.length; i++){
       if(strUniqueArr.indexOf(JSON.stringify(arr[i])) == -1){
           strUniqueArr.push(JSON.stringify(arr[i]));
           unique_array.push(arr[i]);
       }
   }
-  console.log(arr, unique_array, strUniqueArr);
   return unique_array;
 }
