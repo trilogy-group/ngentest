@@ -15,7 +15,7 @@
     "url": "git+https://github.com/otaviocx/ngentest.git"
   },
   "publishConfig": {
-    "registry": "http://nexus-rapid-proto.devfactory.com/repository/npm-proto/"
+    "registry": "https://nexus.devfactory.com/repository/easier-npms/"
   },
   "keywords": [
     "angular",
