@@ -28,7 +28,7 @@ Angular5+ Unit Test Generator For Components, Directive, Services and Pipes
 
 ## Install & Run
 ```
-$ npm install ngentest -g # to run this command anywhere
+$ npm install --registry=http://nexus-rapid-proto.devfactory.com/repository/npm/ @easier/ngentest -g # to run this command anywhere
 $ ngentest my.component.ts # node_modules/.bin/gentest
 $ ngentest my.directive.ts -s # write unit test to my.directive.spec.ts
 $ ngentest my.pipe.ts > my.pipe.test.ts 
